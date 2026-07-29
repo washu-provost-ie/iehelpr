@@ -2,6 +2,7 @@ test_that("dots_flat works", {
   expect_equal(dots_flat(1, 2, 3),       list(1, 2, 3))
   expect_equal(dots_flat(list(1, 2, 3)), list(1, 2, 3))
   expect_equal(dots_flat(c(1, 2, 3)),    list(1, 2, 3))
+  expect_equal(dots_flat(b ~ a, y ~ x),  list(b ~ a, y ~ x))
 
   expect_equal(dots_flat(a = 1, b = 2, c = 3),       list(a = 1, b = 2, c = 3))
   expect_equal(dots_flat(list(a = 1, b = 2, c = 3)), list(a = 1, b = 2, c = 3))
