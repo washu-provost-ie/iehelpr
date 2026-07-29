@@ -1,3 +1,28 @@
+#' More Lenient version of `identical()`
+#'
+#' `identical()` is very strict, requiring all classes and attributes to the exactly the same. `equal()` is a
+#' slightly more lenient version that first attempts the two objects to a common [vctrs] ptype before testing
+#' whether they are identical. `%is%` is just a convenient inline version of `equal()`
+#'
+#' @param x,y R objects
+#'
+#' @returns TRUE or FALSE
+#' @export
+equal <- function(x, y) {
+  ptype <- rlang::catch_cnd(vctrs::vec_ptype2(x, y), classes = "vctrs_error")
+
+  if(rlang::is_error(ptype)) {
+    return(FALSE)
+  }
+
+  c(x, y) %<-% vctrs::vec_cast_common(x, y)
+  identical(x, y)
+}
+
+#' @rdname equal
+#' @export
+`%is%` <- \(x, y) equal(x, y)
+
 #' Check Object Length
 #'
 #' Convenience function to check length (e.g., is_length(x, 2) vs identical(length(x), 2L)).
@@ -11,13 +36,12 @@ is_length <- function(x, len) {
   identical(length(x), as.integer(len))
 }
 
-
 #' Object Length Checks
 #'
 #' Convenience functions to check important length thresholds, complementing [rlang::is_empty()]
 #' * [rlang::is_empty()] - is the length 0?
 #' * `not_empty()` - is the length > 0
-#' * `is_single()` - is the length exactly 1?
+#' * `is_scalar()` - is the length exactly 1?
 #' * `is_multiple()` - is the length > 1?
 #'
 #' @param x An R object
@@ -34,7 +58,7 @@ not_empty <- function(x) {
 
 #' @rdname length_checks
 #' @export
-is_single <- function(x) {
+is_scalar <- function(x) {
   length(x) == 1
 }
 
@@ -45,37 +69,23 @@ is_multiple <- function(x) {
 }
 
 
-#' Is There a Set Difference?
+#' Is an Object Scalar or a Formula
 #'
-#' Test whether there is a setdiff. Returns `TRUE` if `x` has any items that are not in `y`
+#' This test expands the definition of "scalar" to include a single formula. Even though formulas are
+#' technically length 2 or 3, it often makes sense to think of them as single element. `is_scalarish()`
+#' facilitates this by testing whether something is either a "real scalar" or a formula.
 #'
-#' @param x, y vectors
-#'
-#' @returns TRUE or FALSE
-#' @export
-is_setdiff <- function(x, y) {
-  not_empty(setdiff(x, y))
-}
-
-
-#' Check Whether an Object is "Scalar"
-#'
-#' Returns `TRUE` if `x` is length 1 AND is not a list. This prevents something like a 1-column
-#' data frame from being considered scalar (on the other hand, a 1-column data frame will return
-#' `TRUE` for `is_single()`)
-#'
-#' @param x An R object
+#' @param x An object
 #'
 #' @returns TRUE or FALSE
 #' @export
-is_scalar <- function(x) {
-  !rlang::is_list(x) && is_single(x)
+is_scalarish <- function(x) {
+  is_scalar(x) || rlang::is_formula(x)
 }
-
 
 #' Check Whether an Object is "Flat"
 #'
-#' A flat object is a vector or a list whose elements are all scalar objects and/or individual formulas.
+#' A flat object is a vector or a list whose elements are all scalar atomic elements and/or individual formulas.
 #' (although formulas technically have length 2 or 3 this check treats a formula as a single object)
 #'
 #' @param x
@@ -86,14 +96,13 @@ is_scalar <- function(x) {
 #' @examples
 is_flat <- function(x) {
   for(el in x) {
-    if(!is_scalar(el) && !rlang::is_formula(el)) {
+    if(!rlang::is_scalar_atomic(el) && !rlang::is_formula(el)) {
       return(FALSE)
     }
   }
 
   return(TRUE)
 }
-
 
 #' Convert A Vector or Flat List
 #'
@@ -154,6 +163,96 @@ as_fct <- function(x, levels = NULL) {
 
   return(factor(x, levels = levels))
 }
+
+
+#' Is There a Set Difference?
+#'
+#' Test whether there is a setdiff. Returns `TRUE` if `x` has any items that are not in `y`
+#'
+#' @param x, y vectors
+#'
+#' @returns TRUE or FALSE
+#' @export
+is_setdiff <- function(x, y) {
+  not_empty(setdiff(x, y))
+}
+
+
+#' Attempt to Return a Single regex match
+#'
+#' A variant of [stringr::str_subset()] to use when you want or expect to return a single string that
+#' matches `pattern`.
+#' This function always throws an error when more than one value of `string` matches `pattern`. Use the
+#' `empty` argument to control what happens when there are no matches.
+#'
+#' @param string A character vector
+#' @param pattern A single regex pattern
+#' @param empty Controls what happens when no matches occur. By default ("error") an error is thrown.
+#' You can also choose to return `pattern` or return `NA`
+#'
+#' @returns A single string
+#' @export
+str_subset1 <- function(string, pattern, empty = c("error", "return_pattern", "return_na")) {
+  empty <- rlang::arg_match(empty)
+
+  assert_scalar_character(pattern)
+  string <- unique(string)
+
+  match <- stringr::str_subset(string, pattern = pattern)
+
+  if(is_scalar(match)) {
+    return(match)
+  }
+
+  if(is_multiple(match)) {
+    cli::cli_abort(c("More than one string in {.arg string} matches {.arg pattern}",
+                     "i" = "matching strings are {.val {match}}",
+                     "i" = "update the {.arg pattern} {.val {pattern}} to match only one string"))
+  }
+
+  if(empty %is% "error") {
+    cli::cli_abort(c("No strings in {.arg string} match {.arg pattern}",
+                     "i" = "the {.arg pattern} is {.val {pattern}}"))
+  }
+
+  if(empty %is% "return_pattern") {
+    cli::cli_inform("No matches, the pattern {.val {pattern}} is being returned")
+    out <- pattern
+  } else {
+    cli::cli_inform("No matches, returning {.val {NA}}")
+    out <- NA_character_
+  }
+
+  return(out)
+}
+
+
+#' Use a Pattern to "hook" the Matching Value
+#'
+#' Given a pattern and set of candidate values, this function returns the single matching value. This is
+#' designed to be helper function that facilitates users' ability to use a (short) regex pattern as a
+#' stand-in for a (possibly long) full value (e.g. a filename). It provides safety by ensuring that the
+#' pattern "hooks" a single value (presumably the one the user intended the pattern to represent.)
+#' This function always throws an error when `pattern` matches more than one value in `vals`. Use the
+#' `empty` argument to control what happens when there are no matches.
+#'
+#' This function is really just a wrapper for [str_subset1()] with the arguments renamed and
+#' rearranged to more intuitively match the use case (using a single pattern to retrieve a
+#' single candidate value)
+#'
+#' @param pattern a single regex pattern
+#' @param table a vector of candidate values
+#' @param empty Controls what happens when no matches occur. By default ("error") an error is thrown.
+#' You can also choose to return `pattern` or return `NA`
+#'
+#' @returns A single string
+#' @export
+#'
+#' @examples
+hook <- function(pattern, table, empty = c("error", "return_pattern", "return_na")) {
+  str_subset1(table, pattern = pattern, empty = empty)
+}
+
 
 
 

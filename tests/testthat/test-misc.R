@@ -1,10 +1,30 @@
+test_that("equal and %is% work", {
+  expect_true(equal(1, 1))
+  expect_true(equal(1, 1L))
+  expect_true(equal(c("a", "b"), c("a", "b")))
+  expect_true(equal(factor(c("a", "b"), levels = c("a", "b", "c")), factor(c("a", "b"), levels = c("a", "b", "d"))))
+
+  expect_false(equal(1, 2))
+  expect_false(equal("a", 2))
+  expect_false(equal(factor(c("a", "c"), levels = c("a", "b", "c")), factor(c("a", "b"), levels = c("a", "b", "d"))))
+
+  expect_true(1 %is% 1)
+  expect_true(1 %is% 1L)
+  expect_true(c("a", "b") %is% c("a", "b"))
+  expect_true(factor(c("a", "b"), levels = c("a", "b", "c")) %is% factor(c("a", "b"), levels = c("a", "b", "d")))
+
+  expect_false(1 %is% 2)
+  expect_false("a" %is% 2)
+  expect_false(factor(c("a", "c"), levels = c("a", "b", "c")) %is% factor(c("a", "b"), levels = c("a", "b", "d")))
+})
+
 test_that("is_length works", {
   expect_true(is_length("foo", 1))
   expect_true(is_length(4:7, 4))
   expect_true(is_length(list("a"), 1))
 })
 
-test_that("not_empty, is_single, and is_multiple work", {
+test_that("not_empty, is_scalar, and is_multiple work", {
   expect_true(not_empty("a"))
   expect_true(not_empty(NA))
   expect_true(not_empty(c("a", "b")))
@@ -12,12 +32,13 @@ test_that("not_empty, is_single, and is_multiple work", {
   expect_false(not_empty(character(0)))
   expect_false(not_empty(list()))
 
-  expect_true(is_single("foo"))
-  expect_true(is_single(1))
-  expect_true(is_single(NA))
-  expect_true(is_single(list("a")))
-  expect_true(is_single(tibble::tibble(a = 1:4)))
-  expect_false(is_single(4:7))
+  expect_true(is_scalar("foo"))
+  expect_true(is_scalar(1))
+  expect_true(is_scalar(NA))
+  expect_true(is_scalar(list("a")))
+  expect_true(is_scalar(tibble::tibble(a = 1:4)))
+  expect_false(is_scalar(4:7))
+  expect_false(is_scalar(y ~ x))
 
   expect_true(is_multiple(c("a", "b")))
   expect_true(is_multiple(list("a", "b")))
@@ -26,26 +47,25 @@ test_that("not_empty, is_single, and is_multiple work", {
   expect_false(is_multiple(NULL))
 })
 
-test_that("is_scalar works", {
-  expect_true(is_scalar("foo"))
-  expect_true(is_scalar(1))
-  expect_true(is_scalar(NA))
-  expect_false(is_scalar(list("a")))
-  expect_false(is_scalar(tibble::tibble(a = 1:4)))
-  expect_false(is_scalar(4:7))
-})
+test_that("is_scalarish works", {
+  expect_true(is_scalarish("foo"))
+  expect_true(is_scalarish(1))
+  expect_true(is_scalarish(NA))
+  expect_true(is_scalarish(list("a")))
+  expect_true(is_scalarish(tibble::tibble(a = 1:4)))
+  expect_false(is_scalarish(4:7))
 
-test_that("is_setdiff works", {
-  expect_true(is_setdiff(c("a", "b"), c("c", "d")))
-  expect_true(is_setdiff(c("a", "b"), c("b", "c")))
-  expect_false(is_setdiff(c("a", "b"), c("a", "b")))
-  expect_false(is_setdiff(c("a", "b"), c("a", "b", "c")))
+  # this should be the only difference from is_scalar
+  expect_true(is_scalarish(y ~ x))
+  expect_false(is_scalarish(list(y ~ x, b ~ a)))
 })
 
 test_that("is_flat works", {
   expect_true(is_flat(1:4))
   expect_true(is_flat(list("a", 1, y ~ x)))
+  expect_true(is_flat(list("a", 1, y ~ x, factor("a"), Sys.Date())))
   expect_false(is_flat(list("a", 1:2, y ~ x)))
+  expect_false(is_flat(list("a", list(1), y ~ x)))
 })
 
 test_that("as_vec and variants work", {
@@ -66,3 +86,37 @@ test_that("as_vec and variants work", {
                factor(c(a = "foo", b = "bar"), levels = c("baz", "foo", "bar")))
   expect_error(as_fct(list(a = "foo", b = "bar"), levels = c("foo", "baz")), "levels.*must contain all.*x")
 })
+
+test_that("is_setdiff works", {
+  expect_true(is_setdiff(c("a", "b"), c("c", "d")))
+  expect_true(is_setdiff(c("a", "b"), c("b", "c")))
+  expect_false(is_setdiff(c("a", "b"), c("a", "b")))
+  expect_false(is_setdiff(c("a", "b"), c("a", "b", "c")))
+})
+
+test_that("str_subset1 works", {
+  v <- c("foo", "bar", "baz")
+
+  expect_equal(str_subset1(v, pattern = "^f"), "foo")
+  expect_error(str_subset1(v, pattern = "^b"), "More than one string")
+  expect_error(str_subset1(v, pattern = "^z"), "No strings.*match")
+
+  expect_equal(str_subset1(v, pattern = "^z", empty = "return_pattern"), "^z") |>
+    expect_message("\\^z.*being returned")
+  expect_equal(str_subset1(v, pattern = "^z", empty = "return_na"),      NA_character_) |>
+    expect_message("returning.*NA")
+})
+
+test_that("hook works", {
+  v <- c("foo", "bar", "baz")
+
+  expect_equal(hook("^f", table = v), "foo")
+  expect_error(hook("^b", table = v), "More than one string")
+  expect_error(hook("^z", table = v), "No strings.*match")
+
+  expect_equal(hook("^z", table = v, empty = "return_pattern"), "^z") |>
+    expect_message("\\^z.*being returned")
+  expect_equal(hook("^z", table = v, empty = "return_na"),      NA_character_) |>
+    expect_message("returning.*NA")
+})
+
