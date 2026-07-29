@@ -16,3 +16,5 @@ Imports:
     purrr,
     rlang,
     vctrs
+URL: https://github.com/cahillmj/iehelpr
+BugReports: https://github.com/cahillmj/iehelpr/issues
