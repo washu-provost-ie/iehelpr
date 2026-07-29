@@ -3,6 +3,8 @@
 #' This function accepts two different forms of `...` and ensures that the input is processed as a flat list or vector.
 #' `...` can be either a single vector/list or a series of scalar elements. If NOT a single vector/list, then all
 #' elements must be scalar, and the individual elements will be compiled into a vector or flat list.
+#' Variants produce specified output types:
+#' * `dots_chr()` returns a character vector
 #'
 #' Formulas are considered scalar in the context of [dots_flat()]. See [is_scalar()].
 #'
@@ -27,6 +29,11 @@ dots_flat <- function(..., .ptype = NULL) {
 
   return(dots)
 }
+
+#' @rdname dots_flat
+#' @export
+dots_chr <- function(...) dots_flat(..., .ptype = character())
+
 
 
 
