@@ -6,7 +6,13 @@
 \usage{
 is_flat(x)
 }
+\arguments{
+\item{x}{A list or vector}
+}
+\value{
+TRUE or FALSE
+}
 \description{
-A flat object is a vector or a list whose elements are all scalar atomic elements and/or individual formulas.
+A flat object is a vector or a list whose elements are all scalar atomic elements and/or individual formulas
 (although formulas technically have length 2 or 3 this check treats a formula as a single object)
 }

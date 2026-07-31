@@ -85,15 +85,13 @@ is_scalarish <- function(x) {
 
 #' Check Whether an Object is "Flat"
 #'
-#' A flat object is a vector or a list whose elements are all scalar atomic elements and/or individual formulas.
+#' A flat object is a vector or a list whose elements are all scalar atomic elements and/or individual formulas
 #' (although formulas technically have length 2 or 3 this check treats a formula as a single object)
 #'
-#' @param x
+#' @param x A list or vector
 #'
-#' @returns
+#' @returns TRUE or FALSE
 #' @export
-#'
-#' @examples
 is_flat <- function(x) {
   for(el in x) {
     if(!rlang::is_scalar_atomic(el) && !rlang::is_formula(el)) {
@@ -247,11 +245,12 @@ str_subset1 <- function(string, pattern, empty = c("error", "return_pattern", "r
 #'
 #' @returns A single string
 #' @export
-#'
-#' @examples
 hook <- function(pattern, table, empty = c("error", "return_pattern", "return_na")) {
   str_subset1(table, pattern = pattern, empty = empty)
 }
+
+
+
 
 
 

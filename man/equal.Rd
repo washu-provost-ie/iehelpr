@@ -2,9 +2,12 @@
 % Please edit documentation in R/misc.R
 \name{equal}
 \alias{equal}
+\alias{\%is\%}
 \title{More Lenient version of \code{identical()}}
 \usage{
 equal(x, y)
+
+x \%is\% y
 }
 \arguments{
 \item{x, y}{R objects}
