@@ -28,7 +28,7 @@ hook_file <- function(pattern, dir_path = ".", return_full_path = FALSE) {
   files <- list.files(dir_path) |>
     stringr::str_subset(pattern = "^~", negate = TRUE)
 
-  path <- hook(file, table = files)
+  path <- hook(pattern, table = files)
 
   if(return_full_path) path <- file_path(dir_path, path)
 

@@ -23,7 +23,7 @@
 connect_db <- function(server, database, uid = Sys.getenv("ODBC_UID"), conn_name = "conn") {
   if(conn_name %in% ls(name = rlang::global_env())) {
     cli::cli_inform("{.var {conn_name}} already exists")
-    invisible(NULL)
+    return(invisible(NULL))
   }
 
   drivers <- odbc::odbcListDrivers() |>
@@ -111,6 +111,241 @@ sis_peek_htv <- function() {
     stringr::str_subset(pattern = "^htv_")
 }
 
+#' Convert Semester Values to Proper Format
+#'
+#' Given fairly flexible inputs (e.g., "fl23"), `sems_format()` converts to proper semester
+#' format for the data warehouse ("Fall 2023") or, if`to_sis` is TRUE, SIS ("FL2023"). `sems_format_sis()`
+#' is just a convenient wrapper where `to_sis` is TRUE.
+#'
+#' @param ... Either a character vector or individual string arguments
+#' @param to_sis TRUE or FALSE - should the output be formatted to SIS format?
+#'
+#' @returns A character vector
+#' @export
+sems_format <- function(..., to_sis = FALSE) {
+  fall <- ifelse(to_sis, "FL", "Fall ")
+  spring <- ifelse(to_sis, "SP", "Spring ")
+  summer <- ifelse(to_sis, "SU", "Summer ")
+
+  sems <- dots_chr(...) |>
+    purrr::map_chr(.f = \(x) {
+      sem <- x |>
+        stringr::str_extract(pattern = "[[:alpha:]]+") |>
+        tolower()
+
+      if(stringr::str_detect(sem, pattern = "^f")) sem <- fall
+      else if(stringr::str_detect(sem, pattern = "^sp")) sem <- spring
+      else if(stringr::str_detect(sem, pattern = "^su")) sem <- summer
+      else {
+        cli::cli_abort(c("The semester {.val {x}} is not interpretable as a valid semester",
+                         "i" = "adjust the {.arg sems} argument"))
+      }
+
+      year <- extract_year(x)
+
+      return(paste0(sem, year))
+    })
+
+  return(sems)
+}
+
+#' @rdname sems_format
+#' @export
+sems_format_sis <- function(...) {
+  sems_format(..., to_sis = TRUE)
+}
+
+
+#' Convert Semester Data from SIS Format to Data Warehouse Format
+#'
+#' Convert semesters from SIS format (e.g., "FL2020", "SP2020") to data warehouse
+#' format (e.g., "Fall 2020", "Spring 2020")
+#'
+#' @param x a vector of semester data from an SIS table
+#'
+#' @returns A character vector with semesters in data warehouse format
+#' @export
+sems_harmonize <- function(x) {
+  x |>
+    stringr::str_replace("^FL", replacement = "Fall ") |>
+    stringr::str_replace("^SP", replacement = "Spring ") |>
+    stringr::str_replace("^SU", replacement = "Summer ")
+}
+
+# Note, this is just a helper, I don't think I need to document/export
+next_sem <- function(sem, to_sis = FALSE, include_summer = FALSE) {
+  fall <- ifelse(to_sis, "FL", "Fall ")
+  spring <- ifelse(to_sis, "SP", "Spring ")
+  summer <- ifelse(to_sis, "SU", "Summer ")
+
+  sem <- sems_format(sem, to_sis = to_sis)
+
+  if(!include_summer && stringr::str_detect(sem, pattern = glue::glue("^{summer}"))) {
+    cli::cli_abort("You can't include a summer semester unless {.arg include_summer} is {.val {TRUE}}")
+  }
+
+  c(string, term, year) %<-% stringr::str_match(sem, pattern = "(.*)(\\d\\d\\d\\d)$")
+  year <- as.integer(year)
+
+  next_year <- ifelse(term %is% fall, year + 1, year)
+
+  if(!include_summer) next_term <- dplyr::replace_values(term, fall ~ spring, spring ~ fall)
+  else next_term <- dplyr::replace_values(term, fall ~ spring, spring ~ summer, summer ~ fall)
+
+  return(paste0(next_term, next_year))
+}
+
+#' Expand Semesters that Include ":" Inputs
+#'
+#' This function allows the use of `:` to refer to consecutive semesters. (e.g. FL23:SP25 to refer
+#' to "Fall 2023", "Spring 2024", "Fall 2025", and "Spring 2025"). `sems_expand_sis()` is just a
+#' convenient wrapper where `to_sis` is `TRUE`
+#'
+#' @param ... semesters entered as strings, symbols, or character vectors. `:` expressions will be expanded
+#' to include all consecutive semesters (e.g., `fl20:sp22` would include "Fall 2020", "Spring 2021", "Fall 2021", and "Spring 2022")
+#' @param to_sis TRUE or FALSE - should the output be in SIS format?
+#' @param include_summer should summer semesters be included when expanding consecutive semesters?
+#' `FALSE` by default since summer semesters are not of interest in most analyses
+#'
+#' @returns A character vector of semesters in the desired format
+#' @export
+sems_expand <- function(..., to_sis = FALSE, include_summer = FALSE) {
+  dots <- rlang::enquos(...)
+
+  sem_list <- dots |>
+    # evaluate evaluable things and convert to a character vector. Deparse nonevaluable things
+    purrr::map(.f = \(x) {
+      if(is_evaluable(x)) x <- as.character(rlang::eval_tidy(x))
+      else x <- deparse1(rlang::get_expr(x))
+
+      return(x)
+    }) |>
+    # collect into a character vector - note some elements may be ":" strings
+    purrr::list_c(ptype = character()) |>
+    # expand ":" and put everything in proper format
+    purrr::map(.f = \(x) {
+      if(!stringr::str_detect(x, pattern = ":")) {
+        x <- sems_format(x, to_sis = to_sis)
+        if(!include_summer && stringr::str_detect(x, pattern = "SU|Summer")) {
+          cli::cli_abort("You can't include summer semesters if {.arg include_summer} is {.val {FALSE}}")
+        }
+
+        return(x)
+      }
+
+      x <- x |>
+        stringr::str_split_1(pattern = ":") |>
+        sems_format(to_sis = to_sis)
+
+      if(!include_summer && any(stringr::str_detect(x, pattern = "SU|Summer"))) {
+        cli::cli_abort("You can't include summer semesters if {.arg include_summer} is {.val {FALSE}}")
+      }
+
+      # ":" elements will now be length 2. Pull them out into start and end variables
+      c(start, end) %<-% x
+
+
+
+      # initialize "curr" as the starting semester
+      curr <- start
+
+      # a character vector to build up to include all the sequential semesters. Initialize with `curr`
+      sems <- curr
+      while(TRUE) {
+        # find the next semester and add to `sems`
+        curr <- next_sem(curr, to_sis = to_sis, include_summer = include_summer)
+
+
+        sems <- c(sems, curr)
+
+        # once the "next semester" we've just added matches `end`, then we're done!
+        if(curr %is% end) {
+          break
+        }
+      }
+
+      return(sems)
+    }) |>
+    # collect into a character vector - now every element is a single semester
+    purrr::list_c(ptype = character())
+
+  if(!include_summer && any(stringr::str_detect(sem_list, pattern = "SU|Summer"))) {
+    cli::cli_abort("You can't include summer semesters if {.arg include_summer} is {.val {FALSE}}")
+  }
+
+  return(sem_list)
+}
+
+#' @rdname sems_expand
+#' @export
+sems_expand_sis <- function(..., include_summer = FALSE) {
+  sems_expand(..., to_sis = TRUE, include_summer = include_summer)
+}
+
+
+#' Filter a Data Warehouse or SIS Table by Semester
+#'
+#' Filter an SIS or data warehouse table by semester. `...` arguments are processed with [sems_expand()],
+#' allowing flexible and efficient generation of many semsters. `filter_sems_sis()` is just a wrapper for
+#' `filter_sems()` with `to_sis` set to TRUE.
+#'
+#' @param x Data Warehouse or SIS Data as a remote table or dataframe
+#' @param ... semesters entered as strings, symbols, or character vectors. `:` expressions will be expanded
+#' to include all consecutive semesters (e.g., `fl20:sp22` would include "Fall 2020", "Spring 2021", "Fall 2021", and "Spring 2022")
+#' @param to_sis TRUE or FALSE - should the output be in SIS format?
+#' @param include_summer should summer semesters be included when expanding consecutive semesters?
+#' `FALSE` by default since summer semesters are not of interest in most analyses
+#' @param sem_col the name of the semester column as a string or symbol. Defaults guesses are made based
+#' on the `to_sis` argument
+#'
+#' @returns A tibble or remote table (same as `x`)
+#' @export
+filter_sems <- function(x, ..., to_sis = FALSE, include_summer = FALSE, sem_col = waiver()) {
+  sem_col <- rlang::enquo(sem_col)
+
+  if(quo_is_waiver(sem_col)) sem_col <- ifelse(to_sis, rlang::expr(DispSem), rlang::expr(StandardAcademicPeriod))
+  else sem_col <- rlang::sym(rlang::get_expr(sem_col))
+
+  sems <- sems_expand(..., to_sis = to_sis, include_summer = include_summer)
+
+  dplyr::filter(x, !!sem_col %in% sems)
+}
+
+#' @rdname filter_sems
+#' @export
+filter_sems_sis <- function(x, ..., include_summer = FALSE, sem_col = DispSem) {
+  filter_sems(x, ..., to_sis = TRUE, include_summer = include_summer, sem_col = {{sem_col}})
+}
+
+
+#' Collect an SIS Table and Make More Consistent with Data Warehouse
+#'
+#' A wrapper for [dplyr::collect()] that makes a couple of tweaks to make SIS source
+#' data more consistent with warehouse data. Namely, it renames `ID` to `StudentID` and
+#' ensures that it is a character vector. Also if `DispSem` exists it is renamed to
+#' `StandardAcademicPeriod` and formatted from SIS style (e.g., "FL2020") to Data
+#' Warehouse style (e.g., "Fall 2020")
+#'
+#' @param x A remote SIS table
+#' @param ... arguments passed to [dplyr::collect()]
+#'
+#' @returns A tibble
+#' @export
+collect_sis <- function(x, ...) {
+  x <- collect(x, ...) |>
+    mutate(ID = as.character(ID)) |>
+    rename(StudentID = ID)
+
+  if("DispSem" %in% names(x)) {
+    x <- x |>
+      mutate(DispSem = sems_harmonize(DispSem)) |>
+      rename(StandardAcademicPeriod = DispSem)
+
+  }
+
+  return(x)
+}
+
 
 #' Retrieve a Census Package from the Data Warehouse
 #'
@@ -152,31 +387,19 @@ dw_tbl_census <- function(pkg, sems = "Fall 2025", weeks = 10, conn = conn_dw) {
 
   cat("\n")
 
-  if(rlang::is_empty(sems) || sems %is% ".all") {
-    cli::cli_inform(c("census output includes all available semesters",
-                      "update the {.arg sems} argument to adjust this"))
+  sems <- rlang::enquo(sems)
 
-    return(tbl_census)
+  if(is_evaluable(sems)) {
+    res <- rlang::eval_tidy(sems)
+    if(res %is% ".all" || rlang::is_empty(res)) {
+      cli::cli_inform(c("census output includes all available semesters",
+                        "update the {.arg sems} argument to adjust this"))
+
+      return(tbl_census)
+    }
   }
 
-  sems <- purrr::map_chr(sems, .f = \(x) {
-    sem <- x |>
-      stringr::str_extract(pattern = "[[:alpha:]]+") |>
-      tolower()
-
-    if(stringr::str_detect(sem, pattern = "^f")) sem <- "Fall"
-    else if(stringr::str_detect(sem, pattern = "^sp")) sem <- "Spring"
-    else {
-      cli::cli_abort(c("The semester {.val {x}} is not interpretable as \"Fall\" or \"Spring\"",
-                       "i" = "adjust the {.arg sems} argument"))
-    }
-
-    year <- stringr::str_extract(x, pattern = "[[:digit:]]+")
-    if(stringr::str_length(year) %is% 2) year <- paste0("20", year)
-
-    return(paste(sem, year))
-  })
-
+  sems <- sems_expand(!!sems)
   tbl_census <- dplyr::filter(tbl_census, paste(SnapshotSemester, SnapshotYear) %in% sems)
 
   cli::cli_inform(c("census output limited to semester{?s} {.val {sems}}",
@@ -331,17 +554,68 @@ db_count <- function(tbl, ..., wt = NULL, sort = FALSE, name = NULL) {
     as.data.frame()
 }
 
+#' Read the "RDS file" provided annually by Ryan Croft
+#'
+#' @param year which year to read. By default will read the most recent year available
+#' @param is_rds TRUE or FALSE - should you read the RDS version of the file? This is
+#' recommended if possible because it avoids any conversion errors
+#'
+#' @returns A data frame
+#' @export
+fetch_GRS <- function(year = waiver(), is_rds = TRUE) {
+  grs_dir <- Sys.getenv("GRS_DIR")
+  sem_dirs <- dir(grs_dir)
+
+  if(is_waiver(year)) {
+    year <- sem_dirs |>
+      readr::parse_number() |>
+      sort() |>
+      dplyr::last() |>
+      as.character()
+  }
+
+  sem_dir <- str_subset1(sem_dirs, pattern = year)
+  data_dir <- file_path(grs_dir, sem_dir)
+  if(is_rds) data_dir <- file_path(data_dir, "rds Versions")
+
+  read_fn <- ifelse(is_rds, readRDS, readr::read_csv)
+
+  path <- hook_path("\\d\\d\\d\\d\\.", dir_path = data_dir)
+  read_fn(path)
+}
 
 
+#' Fetch "htv_progHist" and Supporting Info
+#'
+#' This function automatically collects the "htv_student_prog_hist" table from the SIS archive, harmonizes it
+#' with the data warehouse (via [collect_sis()]), and optionally adds in additional program info columns from the
+#' "htv_programs" and "htv_div_profile" tables
+#'
+#' @param sems semesters to include. Can include consecutive semesters with ":" syntax
+#' @param add_program_info TRUE or FALSE - should supplementary program info columns be added?
+#'
+#' @returns A tibble
+#' @export
+sis_fetch_progHist <- function(sems = fl13:sp24, add_program_info = TRUE) {
+  hist <- sis_tbl_progHist() |>
+    filter_sems_sis({{sems}}) |>
+    collect_sis()
 
+  if(add_program_info) {
+    prog_info <- sis_tbl_htv("htv_programs$") |>
+      select(ProgCode, ProgName, DisplayName, ProgramLevel, AwardLevel, DegreeType, Division, Department, CIP2000) |>
+      collect() |>
+      mutate(ProgCode = stringr::str_squish(ProgCode))
 
+    div_info <- sis_tbl_htv("div_profile") |>
+      select(Div, DivName, SchCode, SchLevel) |>
+      collect()
 
+    hist <- dplyr::left_join(hist, prog_info, by = "ProgCode") |>
+      left_join(div_info, by = join_by(Division == Div)) |>
+      relocate(DivName, .after = Division)
+  }
 
-
-
-
-
-
-
-
+  return(hist)
+}
 

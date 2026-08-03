@@ -17,7 +17,7 @@
 dots_flat <- function(..., .ptype = NULL) {
   dots <- rlang::list2(...)
 
-  if(is_single(dots)) dots <- dots[[1]]
+  if(is_scalar(dots)) dots <- dots[[1]]
 
   if(!is_flat(dots)) {
     cli::cli_abort(c("`...` could not be flattened",

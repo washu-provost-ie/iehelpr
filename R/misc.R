@@ -1,8 +1,46 @@
+#' Extract Year
+#'
+#' Given any input vector that consistently contains 2-digit and/or 4-digit numbers, this function extracts into
+#' a vector of "years". 2-digit numbers are automatically prepenced with "20".
+#'
+#' @param sem A vector containing semesters in some format
+#'
+#' @returns An integer vector of 4-digit years
+#' @export
+extract_year <- function(x, is_2000 = TRUE) {
+  # grab the numeric component
+  year <- stringr::str_extract(x, pattern = "\\d+")
+
+  digits <- purrr::map_int(year, .f = stringr::str_length) |>
+    unique()
+
+  if(digits %not% 2 && digits %not% 4) {
+    cli::cli_abort("{.arg x} must contain either all 2-digit years or all 4-digit years")
+  }
+
+  if(is_2000 && digits %is% 4 && !(all(stringr::str_detect(year, pattern = "^20")))) {
+    cli::cli_abort("if {.arg is_2000} is {.val {TRUE}}, all years must start with \"20\"")
+  }
+
+  if(digits %is% 2) {
+    if(!is_2000) {
+      cli::cli_abort("if {.arg is_2000} is {.val {FALSE}}, {.arg x} must contain all 4-digit years")
+    }
+
+    year <- paste0("20", year)
+  }
+
+  return(as.integer(year))
+}
+
+
+
 #' More Lenient version of `identical()`
 #'
 #' `identical()` is very strict, requiring all classes and attributes to the exactly the same. `equal()` is a
 #' slightly more lenient version that first attempts the two objects to a common [vctrs] ptype before testing
-#' whether they are identical. `%is%` is just a convenient inline version of `equal()`
+#' whether they are identical. `%is%` is just a convenient inline version of `equal()` and `%not%` a convenient
+#' negation of `%is%``
 #'
 #' @param x,y R objects
 #'
@@ -22,6 +60,12 @@ equal <- function(x, y) {
 #' @rdname equal
 #' @export
 `%is%` <- \(x, y) equal(x, y)
+
+#' @rdname equal
+#' @export
+`%not%` <- \(x, y) !equal(x, y)
+
+
 
 #' Check Object Length
 #'
@@ -247,6 +291,39 @@ str_subset1 <- function(string, pattern, empty = c("error", "return_pattern", "r
 #' @export
 hook <- function(pattern, table, empty = c("error", "return_pattern", "return_na")) {
   str_subset1(table, pattern = pattern, empty = empty)
+}
+
+
+#' Is an Expression or Quosure evaluable?
+#'
+#' Tests whether an expression or quosure can be evaluated with [rlang::eval_tidy()].
+#'
+#' @param expr An expression or quosure
+#'
+#' @returns TRUE or FALSE
+#' @export
+is_evaluable <- function(expr) {
+  res <- try(rlang::eval_tidy(expr), silent = TRUE)
+  !inherits(res, "try-error")
+}
+
+
+#' Check Whether a Quosure is Storing a Waiver Object
+#'
+#' Check whether an expression or quosure evaluates to `waiver()`. This is useful for arguments
+#' captured with [rlang::enexpr()] or [rlang::enquo()] to check whether the captured argument
+#' was actually [waiver()]
+#'
+#' @param quo A quosure or expression
+#'
+#' @returns TRUE or FALSE
+#' @export
+quo_is_waiver <- function(quo) {
+  if(!is_evaluable(quo)) {
+    return(FALSE)
+  }
+
+  is_waiver(rlang::eval_tidy(quo))
 }
 
 

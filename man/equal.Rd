@@ -3,11 +3,14 @@
 \name{equal}
 \alias{equal}
 \alias{\%is\%}
+\alias{\%not\%}
 \title{More Lenient version of \code{identical()}}
 \usage{
 equal(x, y)
 
 x \%is\% y
+
+x \%not\% y
 }
 \arguments{
 \item{x, y}{R objects}
@@ -18,5 +21,6 @@ TRUE or FALSE
 \description{
 \code{identical()} is very strict, requiring all classes and attributes to the exactly the same. \code{equal()} is a
 slightly more lenient version that first attempts the two objects to a common \link[vctrs:vctrs]{vctrs} ptype before testing
-whether they are identical. \verb{\%is\%} is just a convenient inline version of \code{equal()}
+whether they are identical. \verb{\%is\%} is just a convenient inline version of \code{equal()} and \verb{\%not\%} a convenient
+negation of `\%is\%``
 }

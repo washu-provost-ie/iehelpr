@@ -1,3 +1,14 @@
+test_that("extract_year works", {
+  expect_equal(extract_year(c("fall 2025a", "fall 2026b")), 2025:2026)
+  expect_equal(extract_year(c("f25", "f26")),               2025:2026)
+
+  expect_error(extract_year(c("f25", "f2026")),   "must contain.*all")
+  expect_error(extract_year(c("f1980", "f2026")), "must start with.*20")
+  expect_equal(extract_year(c("f1980", "f2026"), is_2000 = FALSE), c(1980, 2026))
+
+  expect_error(extract_year(c("f25", "f26"), is_2000 = FALSE), "must contain.*4-digit")
+})
+
 test_that("equal and %is% work", {
   expect_true(equal(1, 1))
   expect_true(equal(1, 1L))
@@ -118,5 +129,32 @@ test_that("hook works", {
     expect_message("\\^z.*being returned")
   expect_equal(hook("^z", table = v, empty = "return_na"),      NA_character_) |>
     expect_message("returning.*NA")
+})
+
+test_that("is_evaluable works", {
+  library(rlang)
+
+  x <- c("foo", "bar")
+
+  expect_true(is_evaluable("foo"))
+  expect_true(is_evaluable(quo(c("foo", "bar"))))
+
+  # quosure is evaluable because eval_tidy uses it's environment to evaluate x
+  expect_true(is_evaluable(quo(x)))
+  expect_false(is_evaluable(expr(x)))
+
+  expect_false(is_evaluable(quo(a:b)))
+  expect_false(is_evaluable(expr(a:b)))
+})
+
+test_that("quo_is_waiver works", {
+  library(rlang)
+
+  expect_true(quo_is_waiver(quo(waiver())))
+  expect_true(quo_is_waiver(expr(waiver())))
+  expect_false(quo_is_waiver(quo("foo")))
+  expect_false(quo_is_waiver(expr("foo")))
+  expect_false(quo_is_waiver(quo(a:b)))
+  expect_false(quo_is_waiver(expr(a:b)))
 })
 
