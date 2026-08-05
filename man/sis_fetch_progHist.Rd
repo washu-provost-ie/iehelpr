@@ -15,7 +15,6 @@ sis_fetch_progHist(sems = fl13:sp24, add_program_info = TRUE)
 A tibble
 }
 \description{
-This function automatically collects the "htv_student_prog_hist" table from the SIS archive, harmonizes it
-with the data warehouse (via \code{\link[=collect_sis]{collect_sis()}}), and optionally adds in additional program info columns from the
-"htv_programs" and "htv_div_profile" tables
+This function automatically collects the "htv_student_prog_hist" table from the SIS archive, harmonizes it with the
+data warehouse (via \code{\link[=collect_sis]{collect_sis()}}), and optionally adds in additional program info (see \code{\link[=fetch_programInfo_workday]{fetch_programInfo_workday()}}).
 }

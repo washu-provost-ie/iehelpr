@@ -332,15 +332,14 @@ filter_sems_sis <- function(x, ..., include_summer = FALSE, sem_col = DispSem) {
 #' @returns A tibble
 #' @export
 collect_sis <- function(x, ...) {
-  x <- collect(x, ...) |>
-    mutate(ID = as.character(ID)) |>
-    rename(StudentID = ID)
+  x <- dplyr::collect(x, ...) |>
+    dplyr::mutate(ID = as.character(ID)) |>
+    dplyr::rename(StudentID = ID)
 
   if("DispSem" %in% names(x)) {
     x <- x |>
-      mutate(DispSem = sems_harmonize(DispSem)) |>
-      rename(StandardAcademicPeriod = DispSem)
-
+      dplyr::mutate(DispSem = sems_harmonize(DispSem)) |>
+      dplyr::rename(StandardAcademicPeriod = DispSem)
   }
 
   return(x)
@@ -562,8 +561,11 @@ db_count <- function(tbl, ..., wt = NULL, sort = FALSE, name = NULL) {
 #'
 #' @returns A data frame
 #' @export
-fetch_GRS <- function(year = waiver(), is_rds = TRUE) {
-  grs_dir <- Sys.getenv("GRS_DIR")
+fetch_grs <- function(year = waiver(), is_rds = TRUE) {
+  box_dir <- Sys.getenv("BOX_DIR")
+  grs_dir <- file_path(box_dir, "00 IE", "Student Outcomes Team_SHARED", "Central Data Sources", "GRS Report Data",
+                       "OUR_provided_archive", "03 Cleaned Data")
+
   sem_dirs <- dir(grs_dir)
 
   if(is_waiver(year)) {
@@ -584,12 +586,39 @@ fetch_GRS <- function(year = waiver(), is_rds = TRUE) {
   read_fn(path)
 }
 
+#' Retrieve SIS and Workday Program of Study Inventories
+#'
+#' These functions retrieve program inventory files from "OO IR Office/Data Sources, Resources/SOURCE-Workday Student/Program Inventory".
+#' These files were pulled from the source data (SIS Archive "htv_programs" table and Workday report SRPT0027) on 8/4/2026 and and slightly updated
+#' (remove, rearrange columns and added columns to facilitate linking programs across SIS and Workday). One column in the SIS data (ProgramType.revised)
+#' was cleaned to better match Workday categories, but the original column is also retained.
+#'
+#' @returns A tibble
+#' @name fetch_programInfo
+NULL
+
+#' @rdname fetch_programInfo
+#' @export
+fetch_programInfo_sis <- function() {
+  box_dir <- Sys.getenv("BOX_DIR")
+  dir_path <- file_path(box_dir, "00 IR Office", "Data Sources, Resources", "SOURCE-Workday Student", "Program Inventory")
+  prog_info <- read_match("ProgramOfStudyInventory_SIS", dir_path = dir_path)
+  return(prog_info)
+}
+
+#' @rdname fetch_programInfo
+#' @export
+fetch_programInfo_workday <- function() {
+  box_dir <- Sys.getenv("BOX_DIR")
+  dir_path <- file_path(box_dir, "00 IR Office", "Data Sources, Resources", "SOURCE-Workday Student", "Program Inventory")
+  prog_info <- read_match("ProgramOfStudyInventory_Workday", dir_path = dir_path)
+  return(prog_info)
+}
 
 #' Fetch "htv_progHist" and Supporting Info
 #'
-#' This function automatically collects the "htv_student_prog_hist" table from the SIS archive, harmonizes it
-#' with the data warehouse (via [collect_sis()]), and optionally adds in additional program info columns from the
-#' "htv_programs" and "htv_div_profile" tables
+#' This function automatically collects the "htv_student_prog_hist" table from the SIS archive, harmonizes it with the
+#' data warehouse (via [collect_sis()]), and optionally adds in additional program info (see [fetch_programInfo_workday()]).
 #'
 #' @param sems semesters to include. Can include consecutive semesters with ":" syntax
 #' @param add_program_info TRUE or FALSE - should supplementary program info columns be added?
@@ -602,20 +631,11 @@ sis_fetch_progHist <- function(sems = fl13:sp24, add_program_info = TRUE) {
     collect_sis()
 
   if(add_program_info) {
-    prog_info <- sis_tbl_htv("htv_programs$") |>
-      select(ProgCode, ProgName, DisplayName, ProgramLevel, AwardLevel, DegreeType, Division, Department, CIP2000) |>
-      collect() |>
-      mutate(ProgCode = stringr::str_squish(ProgCode))
-
-    div_info <- sis_tbl_htv("div_profile") |>
-      select(Div, DivName, SchCode, SchLevel) |>
-      collect()
-
-    hist <- dplyr::left_join(hist, prog_info, by = "ProgCode") |>
-      left_join(div_info, by = join_by(Division == Div)) |>
-      relocate(DivName, .after = Division)
+    prog_info <- fetch_programInfo_sis()
+    hist <- dplyr::left_join(hist, prog_info, by = "ProgCode")
   }
 
   return(hist)
 }
+
 

@@ -7,7 +7,7 @@
 \usage{
 hook_file(pattern, dir_path = ".", return_full_path = FALSE)
 
-hook_path(pattern, dir_path)
+hook_path(pattern, dir_path = ".")
 }
 \arguments{
 \item{pattern}{A pattern that matches exactly one filename in dir_path}
