@@ -625,7 +625,7 @@ fetch_programInfo_workday <- function() {
 #'
 #' @returns A tibble
 #' @export
-sis_fetch_progHist <- function(sems = fl13:sp24, add_program_info = TRUE) {
+fetch_progHist_sis <- function(sems = fl13:sp24, add_program_info = TRUE) {
   hist <- sis_tbl_progHist() |>
     filter_sems_sis({{sems}}) |>
     collect_sis()
