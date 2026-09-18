@@ -1,10 +1,10 @@
 #' Database Connection Helpers
 #'
-#' `connect_db()` connects to a database, given a `server` and `database`. After calling the function, you will need to authenticate
-#' interactively by providing your WashU credentials. `connect_db()` and `connect_sis()` are convenient wrappers that connect to the
+#' `db_connect()` connects to a database, given a `server` and `database`. After calling the function, you will need to authenticate
+#' interactively by providing your WashU credentials. `db_connect()` and `sis_connect()` are convenient wrappers that connect to the
 #' data warehouse and SIS archive, respectively. DO NOT assign the result - the connection will automatically be assigned a standard
-#' name (`connect_dw()` creates a connection named `conn_dw` and `connect_sis()` creates a connection named `conn_sis`).
-#' `disconnect_dw()` and `disconned_sis()` disconnect from the warehouse and sis archive, respectively, and remove the names of the
+#' name (`dw_connect()` creates a connection named `conn_dw` and `sis_connect()` creates a connection named `conn_sis`).
+#' `dw_disconnect()` and `sis_disconnect()` disconnect from the warehouse and sis archive, respectively, and remove the names of the
 #' connections from the environment.
 #'
 #' If the `uid` is not provided (or not valid), the function will still work. You will just need to go through an extra Microsoft Sign in
@@ -20,7 +20,7 @@
 #' @returns Technically returns only `TRUE` if successful. It creates a database connection and assigns it to `conn_name` in the global
 #' environment.
 #' @export
-connect_db <- function(server, database, uid = Sys.getenv("ODBC_UID"), conn_name = "conn") {
+db_connect <- function(server, database, uid = Sys.getenv("ODBC_UID"), conn_name = "conn") {
   if(conn_name %in% ls(name = rlang::global_env())) {
     cli::cli_inform("{.var {conn_name}} already exists")
     return(invisible(NULL))
@@ -58,29 +58,29 @@ connect_db <- function(server, database, uid = Sys.getenv("ODBC_UID"), conn_name
   return(TRUE)
 }
 
-#' @rdname connect_db
+#' @rdname db_connect
 #' @export
-connect_dw <- function(uid = Sys.getenv("ODBC_UID")) {
-  connect_db(server = "data-dw-prod-sql.database.windows.net", database = "data-dw-prod-dw", uid = uid, conn_name = "conn_dw")
+dw_connect <- function(uid = Sys.getenv("ODBC_UID")) {
+  db_connect(server = "data-dw-prod-sql.database.windows.net", database = "data-dw-prod-dw", uid = uid, conn_name = "conn_dw")
 }
 
-#' @rdname connect_db
+#' @rdname db_connect
 #' @export
-connect_sis <- function(uid = Sys.getenv("ODBC_UID")) {
-  connect_db(server = "data-archive-prod-sql.public.804549f24bfa.database.windows.net,3342", database = "Student_Info", uid = uid, conn_name = "conn_sis")
+sis_connect <- function(uid = Sys.getenv("ODBC_UID")) {
+  db_connect(server = "data-archive-prod-sql.public.804549f24bfa.database.windows.net,3342", database = "Student_Info", uid = uid, conn_name = "conn_sis")
 }
 
-#' @rdname connect_db
+#' @rdname db_connect
 #' @export
-disconnect_dw <- function() {
+dw_disconnect <- function() {
   DBI::dbDisconnect(conn_dw)
   rm(conn_dw, pos = rlang::global_env())
   return(TRUE)
 }
 
-#' @rdname connect_db
+#' @rdname db_connect
 #' @export
-disconnect_sis <- function() {
+sis_disconnect <- function() {
   DBI::dbDisconnect(conn_sis)
   rm(conn_sis, pos = rlang::global_env())
   return(TRUE)
@@ -90,6 +90,8 @@ disconnect_sis <- function() {
 #' See Available Tables
 #'
 #' `dw_peek_census()` shows the names of all available packages in the "STUCENSUS" schema of the data warehouse.
+#' `dw_peek_student()` shows the names of all available packages in the "STUDENT" schema of the warehouse (this is
+#' the daily refresh of student data pulled from Workday).
 #' `sis_peek_htv()` shows the names of all available SIS tables with an "htv_" prefix. NOTE: the appropriate
 #' database connection (`conn_dw` or `conn_sis`) must be active
 #'
@@ -106,9 +108,86 @@ dw_peek_census <- function() {
 
 #' @rdname peek_database
 #' @export
+dw_peek_student <- function() {
+  DBI::dbListTables(conn_dw, schema_name = "STUDENT") |>
+    stringr::str_subset("^cv")
+}
+
+#' @rdname peek_database
+#' @export
 sis_peek_htv <- function() {
   DBI::dbListTables(conn_sis) |>
     stringr::str_subset(pattern = "^htv_")
+}
+
+#' Extract Year or Term
+#'
+#' Given a vector of semesters (e.g., "Fall 2020", "Spring 2023", "FL25), `extract_year()` and
+#' `extract_term()` extract the calendar year and term (e.g., "Fall" or "Spring"), respectively.
+#' Semester inputs can be formatted flexibly as long as they are unambiguous.
+#'
+#' @param sem A vector containing semesters. This is failry flexbile but all inputs must have text
+#' intepretatable as "Fall", "Spring", or "Summer" (e.g., "Fall", "F", "Spring", "sp") and must
+#' include a valid 2-digit or 4-digit year.
+#' @param is_2000 Should all dates be assumed to start with "20"? If `FALSE`, then all inputs
+#' will need to include 4-digit years
+#'
+#' @returns For `extract_year()`, an integer vector of 4-digit years. For `extract_term()` a
+#' character vector with only the values "Fall", "Spring" and "Summer"
+#' @name sem_extract
+NULL
+
+#' @rdname sem_extract
+#' @export
+extract_year <- function(sem, is_2000 = TRUE) {
+  # grab the numeric component
+  year <- stringr::str_extract(sem, pattern = "\\d+")
+
+  digits <- purrr::map_int(year, .f = stringr::str_length) |>
+    unique() |>
+    purrr::discard(.p = is.na)
+
+  if(digits %not% 2 && digits %not% 4) {
+    cli::cli_abort("{.arg x} must contain either all 2-digit years or all 4-digit years")
+  }
+
+  if(is_2000 && digits %is% 4 && !all(stringr::str_detect(year, pattern = "^20"), na.rm = TRUE)) {
+    cli::cli_abort("if {.arg is_2000} is {.val {TRUE}}, all years must start with \"20\"")
+  }
+
+  if(digits %is% 2) {
+    if(!is_2000) {
+      cli::cli_abort("if {.arg is_2000} is {.val {FALSE}}, {.arg x} must contain all 4-digit years")
+    }
+
+    non_na <- !is.na(year)
+    year[non_na] <- paste0("20", year[non_na])
+  }
+
+  # prevent warnings that would occur when year is NA
+  out <- suppressWarnings(as.integer(year))
+  return(out)
+}
+
+#' @rdname sem_extract
+#' @export
+extract_term <- function(sem, to_sis = FALSE) {
+  fall <- ifelse(to_sis, "FL", "Fall")
+  spring <- ifelse(to_sis, "SP", "Spring")
+  summer <- ifelse(to_sis, "SU", "Summer")
+
+  term <- stringr::str_extract(sem, "^\\w+") |>
+    stringr::str_to_lower()
+
+  if(any(!stringr::str_detect(term, "^f|^sp|^su"), na.rm = TRUE)) {
+    cli::cli_abort('{.val {term}} not interpretable as ""Spring", "Summer", or "Fall"')
+  }
+
+  term[stringr::str_detect(term, pattern = "^f")] <- fall
+  term[stringr::str_detect(term, pattern = "^sp")] <- spring
+  term[stringr::str_detect(term, pattern = "^su")] <- summer
+
+  return(term)
 }
 
 #' Convert Semester Values to Proper Format
@@ -123,30 +202,12 @@ sis_peek_htv <- function() {
 #' @returns A character vector
 #' @export
 sems_format <- function(..., to_sis = FALSE) {
-  fall <- ifelse(to_sis, "FL", "Fall ")
-  spring <- ifelse(to_sis, "SP", "Spring ")
-  summer <- ifelse(to_sis, "SU", "Summer ")
-
-  sems <- dots_chr(...) |>
-    purrr::map_chr(.f = \(x) {
-      sem <- x |>
-        stringr::str_extract(pattern = "[[:alpha:]]+") |>
-        tolower()
-
-      if(stringr::str_detect(sem, pattern = "^f")) sem <- fall
-      else if(stringr::str_detect(sem, pattern = "^sp")) sem <- spring
-      else if(stringr::str_detect(sem, pattern = "^su")) sem <- summer
-      else {
-        cli::cli_abort(c("The semester {.val {x}} is not interpretable as a valid semester",
-                         "i" = "adjust the {.arg sems} argument"))
-      }
-
-      year <- extract_year(x)
-
-      return(paste0(sem, year))
-    })
-
-  return(sems)
+  sems <- dots_chr(...)
+  years <- extract_year(sems)
+  terms <- extract_term(sems, to_sis = to_sis)
+  sep <- ifelse(to_sis, "", " ")
+  out <- paste(terms, years, sep = sep)
+  return(out)
 }
 
 #' @rdname sems_format
@@ -155,8 +216,7 @@ sems_format_sis <- function(...) {
   sems_format(..., to_sis = TRUE)
 }
 
-
-#' Convert Semester Data from SIS Format to Data Warehouse Format
+#' Format SIS Semester Data into Data Warehouse Format
 #'
 #' Convert semesters from SIS format (e.g., "FL2020", "SP2020") to data warehouse
 #' format (e.g., "Fall 2020", "Spring 2020")
@@ -167,9 +227,53 @@ sems_format_sis <- function(...) {
 #' @export
 sems_harmonize <- function(x) {
   x |>
-    stringr::str_replace("^FL", replacement = "Fall ") |>
-    stringr::str_replace("^SP", replacement = "Spring ") |>
-    stringr::str_replace("^SU", replacement = "Summer ")
+    str_replace_multi(
+      "^FL" ~ "Fall ",
+      "^SP" ~ "Spring ",
+      "^SU" ~ "Summer "
+    )
+}
+
+
+#' Format SIS Program Data in Data Warehouse Format
+#'
+#' Convert programs from SIS format (e.g., B.S. MAJOR IN CHEMISTRY) to data warehouse format
+#' (e.g., Chemistry, B.S.). Note this does not directly link old SIS programs data warehouse programs,
+#' it merely make the programs follow data warehouse format conventions (e.g., title case, degree at
+#' the end preceded by a comma). If possible you should link SIS programs directly to their
+#' data warehouse counterparts, e.g., by calling `fetch_programInfo_sis()` and using the `ProgName`
+#' and `ProgName.warehouse` fields. The main purpose of `programs_harmonize` is to update the
+#' formatting of SIS programs that you aren't able to match directly.
+#'
+#' @param x A character vector of SIS program names
+#'
+#' @returns A character vector
+#' @export
+programs_harmonize <- function(x) {
+  format_prog <- function(x, delete_prefix, suffix) {
+    delete_prefix <- paste0("^", delete_prefix, "\\s")
+    is_update <- stringr::str_detect(x, pattern = delete_prefix)
+
+    x[is_update] <- x[is_update] |>
+      str_remove(pattern = delete_prefix) |>
+      paste0(suffix)
+
+    return(x)
+  }
+
+  x <- x |>
+    str_to_title() |>
+    format_prog(delete_prefix = "2nd Major In", suffix = " Second Major") |>
+    format_prog(delete_prefix = "Second Major In", suffix = " Second Major") |>
+    format_prog(delete_prefix = "A\\.b\\. Major In", suffix = ", A.B.") |>
+    format_prog(delete_prefix = "B\\.f\\.a\\. Major In", suffix = ", B.F.A") |>
+    format_prog(delete_prefix = "B\\.s\\. In", suffix = ", B.S.") |>
+    format_prog(delete_prefix = "B\\.s\\.b\\.a\\. Major In", suffix = " Second Major") |>
+    format_prog(delete_prefix = "B\\.s\\. Major In", suffix = ", B.S.") |>
+    stringr::str_replace(pattern = "Bjc", replacement = "BJC") |>
+    replace_values("B.s. Undeclared Major" ~ "Undeclared Major, B.S.")
+
+  return(x)
 }
 
 # Note, this is just a helper, I don't think I need to document/export
@@ -348,25 +452,26 @@ collect_sis <- function(x, ...) {
 
 #' Retrieve a Census Package from the Data Warehouse
 #'
-#' Creates a `tbl` object linked to a given census package. You can interact with this object via dplyr verbs as
-#' needed and then call [dplyr::collect()] to pull the result into a data frame. Commonly, you will use
+#' `dw_tbl_census()` creates a `tbl` object linked to a given census package. You can interact with this object via
+#' 'dplyr' verbs as needed and then call [dplyr::collect()] to pull the result into a data frame. Commonly, you will use
 #' `filter()` and `select()` to narrow the data before using `collect()`.
 #' By default, this will filter the data to the Fall 2025 10th week census, but this can be adjusted to include any census
 #' or censuses of interest. These are convenient wrappers to link to specific packages:
-#' * `dw_tbl_AcademicRecord()` for "vAcademicRecord"
-#' * `dw_tbl_AcademicPeriodRecord()` for "vAcademicPeriodRecord"
-#' * `dw_tbl_ProgramOfStudyRecord()` for "vProgramOfStudyRecord"
-#' * `dw_tbl_RegistrationRecord()` for "vRegistrationRecord"
-#' * `dw_tbl_SectionRoleAssignment()` for "vSectionRoleAssignment"
+#' * `dw_tbl_census_AcademicRecord()` for "vAcademicRecord"
+#' * `dw_tbl_census_AcademicPeriodRecord()` for "vAcademicPeriodRecord"
+#' * `dw_tbl_census_ProgramOfStudyRecord()` for "vProgramOfStudyRecord"
+#' * `dw_tbl_census_RegistrationRecord()` for "vRegistrationRecord"
+#' * `dw_tbl_census_SectionRoleAssignment()` for "vSectionRoleAssignment"
 #'
 #' @param pkg pattern matching the name of exactly table in the "STUCENSUS" schema
-#' @param sems character vector giving the semesters to include. This is fairly flexible, but each element
-#' must include text that's interpretable as either "Fall" or "Spring" and a year (either 2- or 4-digits).
+#' @param sems character vector giving the snapshot semesters to include. This is fairly flexible, but each element
+#' must include text that's interpretable as either "Fall" or "Spring" and a year (either 2- or 4-digits). You can
+#' use ":" format to include consecutive semesters
 #' @param weeks character or numeric vector giving the weeks to include. Can include only 0, 4, or 10
 #' (or string variants such as "0", "4", "10" or "00", "04", "10").
-#' @param conn a database connection to the the SIS archive.
+#' @param conn a database connection to the the data warehouse (called `conn_dw` by default)
 #'
-#' @returns A `tbl()` object.
+#' @returns A `tbl` object.
 #' @export
 dw_tbl_census <- function(pkg, sems = "Fall 2025", weeks = 10, conn = conn_dw) {
   census_packages <- dw_peek_census()
@@ -409,33 +514,102 @@ dw_tbl_census <- function(pkg, sems = "Fall 2025", weeks = 10, conn = conn_dw) {
 
 #' @rdname dw_tbl_census
 #' @export
-dw_tbl_AcademicRecord <- function(sems = "Fall 2025", weeks = 10, conn = conn_dw) {
+dw_tbl_census_AcademicRecord <- function(sems = "Fall 2025", weeks = 10, conn = conn_dw) {
   dw_tbl_census(pkg = "AcademicRecord", sems = sems, weeks = weeks, conn = conn)
 }
 
 #' @rdname dw_tbl_census
 #' @export
-dw_tbl_AcademicPeriodRecord <- function(sems = "Fall 2025", weeks = 10, conn = conn_dw) {
+dw_tbl_census_AcademicPeriodRecord <- function(sems = "Fall 2025", weeks = 10, conn = conn_dw) {
   dw_tbl_census(pkg = "AcademicPeriodRecord", sems = sems, weeks = weeks, conn = conn)
 }
 
 #' @rdname dw_tbl_census
 #' @export
-dw_tbl_ProgramOfStudyRecord <- function(sems = "Fall 2025", weeks = 10, conn = conn_dw) {
+dw_tbl_census_ProgramOfStudyRecord <- function(sems = "Fall 2025", weeks = 10, conn = conn_dw) {
   dw_tbl_census(pkg = "ProgramOfStudyRecord", sems = sems, weeks = weeks, conn = conn)
 }
 
 #' @rdname dw_tbl_census
 #' @export
-dw_tbl_RegistrationRecord <- function(sems = "Fall 2025", weeks = 10, conn = conn_dw) {
+dw_tbl_census_RegistrationRecord <- function(sems = "Fall 2025", weeks = 10, conn = conn_dw) {
   dw_tbl_census(pkg = "RegistrationRecord", sems = sems, weeks = weeks, conn = conn)
 }
 
 #' @rdname dw_tbl_census
 #' @export
-dw_tbl_SectionRoleAssignment <- function(sems = "Fall 2025", weeks = 10, conn = conn_dw) {
+dw_tbl_census_SectionRoleAssignment <- function(sems = "Fall 2025", weeks = 10, conn = conn_dw) {
   dw_tbl_census(pkg = "SectionRoleAssignment", sems = sems, weeks = weeks, conn = conn)
 }
+
+
+#' Retrieve a Student Data Package from the Warehouse
+#'
+#' Creates a `tbl` object linked to a given student data package (Workday daily refresh tables). You can
+#' interact with this object via `dplyr` verbs as needed and then call [dplyr::collect()] to pull the result
+#' into a data frame. Commonly, you will use `filter()` and `select()` to narrow the data before using `
+#' collect()`.
+#' These are convenient wrappers to link to specific packages:
+#' * `dw_tbl_student_AcademicRecord()` for "cvAcademicRecord"
+#' * `dw_tbl_student_AcademicPeriodRecord()` for "cvAcademicPeriodRecord"
+#' * `dw_tbl_student_CourseSectionDefinition()` for "cvCourseSectionDefinitionStudyRecord"
+#' * `dw_tbl_student_ProgramOfStudyDefinition()` for "cvProgramOfStudyDefinition"
+#' * `dw_tbl_student_RegistrationRecord()` for "cvRegistrationRecord"
+#' * `dw_tbl_student_WaitlistUtilization()` for "cvWaitlistUtilization"
+#'
+#' @param pkg pattern matching the name of exactly table in the "STUDENT" schema
+#' @param conn a database connection to the the data warehouse (called `conn_dw` by default)
+#'
+#' @returns A `tbl` object
+#' @export
+dw_tbl_student <- function(pkg, conn = conn_dw) {
+  packages <- dw_peek_student()
+
+  pkg <- hook(pkg, table = packages)
+  tbl_name <- DBI::Id(schema = "STUDENT", table = pkg)
+
+  cli::cli_inform("connecting to table {.val STUDENT}.{.val {pkg}}")
+  cat("\n")
+
+  dplyr::tbl(conn, tbl_name)
+}
+
+#' @rdname dw_tbl_student
+#' @export
+dw_tbl_student_AcademicRecord <- function(conn = conn_dw) {
+  dw_tbl_student("cvAcademicRecord")
+}
+
+#' @rdname dw_tbl_student
+#' @export
+dw_tbl_student_AcademicPeriodRecord <- function(conn = conn_dw) {
+  dw_tbl_student("cvAcademicPeriodRecord")
+}
+
+#' @rdname dw_tbl_student
+#' @export
+dw_tbl_student_CourseSectionDefinition <- function(conn = conn_dw) {
+  dw_tbl_student("cvCourseSectionDefinition")
+}
+
+#' @rdname dw_tbl_student
+#' @export
+dw_tbl_student_ProgramOfStudyDefinition <- function(conn = conn_dw) {
+  dw_tbl_student("cvProgramOfStudyDefinition")
+}
+
+#' @rdname dw_tbl_student
+#' @export
+dw_tbl_student_RegistrationRecord <- function(conn = conn_dw) {
+  dw_tbl_student("cvRegistrationRecord")
+}
+
+#' @rdname dw_tbl_student
+#' @export
+dw_tbl_student_WaitlistUtilization <- function(conn = conn_dw) {
+  dw_tbl_student("cvWaitlistUtilization")
+}
+
 
 
 #' Retrieve an "htv_" table from the SIS Archive
@@ -588,10 +762,11 @@ fetch_grs <- function(year = waiver(), is_rds = TRUE) {
 
 #' Retrieve SIS and Workday Program of Study Inventories
 #'
-#' These functions retrieve program inventory files from "OO IR Office/Data Sources, Resources/SOURCE-Workday Student/Program Inventory".
-#' These files were pulled from the source data (SIS Archive "htv_programs" table and Workday report SRPT0027) on 8/4/2026 and and slightly updated
-#' (remove, rearrange columns and added columns to facilitate linking programs across SIS and Workday). One column in the SIS data (ProgramType.revised)
-#' was cleaned to better match Workday categories, but the original column is also retained.
+#' These functions retrieve full program inventories for SIS and the Data Warehouse. Because the SIS archive is
+#' frozen, the program inventory has been saved to file, and `fetch_programInfo_sis()` retrieves and reads
+#' this static file from "OO IR Office/Data Sources, Resources/SOURCE-SIS Archive". `fetch_programInfo_workday()`
+#' reads live data from the data warehouse ("STUDENT"."cvProgramOfStudyDefinition"), since the workday program
+#' info can be updated at any time.
 #'
 #' @returns A tibble
 #' @name fetch_programInfo
@@ -601,7 +776,7 @@ NULL
 #' @export
 fetch_programInfo_sis <- function() {
   box_dir <- Sys.getenv("BOX_DIR")
-  dir_path <- file_path(box_dir, "00 IR Office", "Data Sources, Resources", "SOURCE-Workday Student", "Program Inventory")
+  dir_path <- file_path(box_dir, "00 IR Office", "Data Sources, Resources", "SOURCE-SIS Archive")
   prog_info <- read_match("ProgramOfStudyInventory_SIS", dir_path = dir_path)
   return(prog_info)
 }
@@ -609,23 +784,60 @@ fetch_programInfo_sis <- function() {
 #' @rdname fetch_programInfo
 #' @export
 fetch_programInfo_workday <- function() {
-  box_dir <- Sys.getenv("BOX_DIR")
-  dir_path <- file_path(box_dir, "00 IR Office", "Data Sources, Resources", "SOURCE-Workday Student", "Program Inventory")
-  prog_info <- read_match("ProgramOfStudyInventory_Workday", dir_path = dir_path)
+  ################# Read and Reorder Columns ###################
+  prog_info <- dw_tbl_student_ProgramOfStudyDefinition() |>
+    dplyr::select(Program_of_Study_Code, Program_of_Study, Program_of_Study_ID, Program_of_Study_Name,
+                  Program_of_Study_Academic_Level,
+                  Program_of_Study_Owning_School, Program_of_Study_Owning_AU, Program_of_Study_Coordinating_AU,
+                  Taxonomy_Code, Taxonomy, CIP_Code, CIP_Title, everything()) |>
+    dplyr::collect()
+
+  # SIS columns that we want to link to the Data Warehouse Program Info
+  sis_info <- fetch_programInfo_sis() |>
+    dplyr::select(ProgCode, ProgName)
+
+  ############## Take First "Guess" at Values in the Linking Field
+  prog_info <- prog_info |>
+    dplyr::mutate(
+      ProgCode.sis = stringr::str_remove(Program_of_Study_ID, pattern = "^POS_"),
+      .after = Program_of_Study
+    )
+
+  ####### Check Values in the Linking Field ###############################
+  # Set the "guessed" ProgCode to NA if it's not actually in the the SIS program info
+  is_in_sis <- prog_info$ProgCode.sis %in% sis_info$ProgCode
+  prog_info$ProgCode.sis[!is_in_sis] <- NA_character_
+
+
+  ########## Use the Verified Linking Values to Pull in ProgName Field from SIS ##############
+  # add ".sis" suffix to make it clear that these are fields originally coming from SIS
+  sis_info <- dplyr::select(sis_info, ProgCode.sis = ProgCode, ProgName.sis = ProgName)
+  prog_info <- left_join2(prog_info, sis_info, by = "ProgCode.sis", .after = ProgCode.sis)
+
   return(prog_info)
 }
 
-#' Fetch "htv_progHist" and Supporting Info
+
+#' Fetch Useful Datasets from Data Warehouse or SIS
 #'
-#' This function automatically collects the "htv_student_prog_hist" table from the SIS archive, harmonizes it with the
-#' data warehouse (via [collect_sis()]), and optionally adds in additional program info (see [fetch_programInfo_workday()]).
+#' Whereas `sis_dw_` and `sis_tbl_` functions connect to tables as-is and return a `tbl` connection object, `fetch_` functions
+#' are designed to return more "analysis ready" tibbles. They do things such as convert SIS data to data warehouse format
+#' (e.g., making column names and date formats consistent), join in supplementary data, order columns based on importance /
+#' frequencey of use, and perform other data manipulation to output data that is ready-made for a specific purpose.
+#'
+#' * `fetch_progHist_sis()` pulls in a transformed version of "htv_student_prog_hist"
+#' * `fetch_degrees_sis()` pulls in a transformed version of "htv_degree_info"
 #'
 #' @param sems semesters to include. Can include consecutive semesters with ":" syntax
 #' @param add_program_info TRUE or FALSE - should supplementary program info columns be added?
 #'
 #' @returns A tibble
+#' @name fetch_sis
+NULL
+
+#' @rdname fetch_sis
 #' @export
-fetch_progHist_sis <- function(sems = fl13:sp24, add_program_info = TRUE) {
+fetch_progHist_sis <- function(sems = f13:sp25, add_program_info = TRUE) {
   hist <- sis_tbl_progHist() |>
     filter_sems_sis({{sems}}) |>
     collect_sis()
@@ -638,4 +850,122 @@ fetch_progHist_sis <- function(sems = fl13:sp24, add_program_info = TRUE) {
   return(hist)
 }
 
+#' @rdname fetch_sis
+#' @export
+fetch_progHist_dw <- function(sems = "Fall 2025", weeks = 10, conn = conn_dw) {
+  dw_tbl_census_ProgramOfStudyRecord(sems = {{sems}}, weeks = weeks, conn = conn) |>
+    select(StudentID, StandardAcademicPeriod, SnapshotCode, ProgramOfStudyCode, ProgramOfStudy,
+           ReportingRecordFlag, PrimaryProgramOfStudyFlag, AcademicRecordAcademicLevel, EducationalTaxonomyCodeID,
+           EducationalTaxonomyCode, ProgramOfStudyOwningSchool, ProgramOfStudyCoordinatingAcademicUnit,
+           ProgramOfStudyType, CIPCode, everything()) |>
+    collect()
+}
+
+#' @rdname fetch_sis
+#' @export
+fetch_degrees_sis <- function(sems = f13:su25, add_program_info = TRUE) {
+  degrees <- sis_tbl_degree() |>
+    filter_sems_sis({{sems}}, include_summer = TRUE) |>
+    collect_sis() |>
+    rename(ProgCode = ProgramCd, ProgName = ProgramName)
+
+  if(add_program_info) {
+    prog_info <- fetch_programInfo_sis()
+    degrees <- degrees |>
+      # I will pick up ProgName from the join
+      select(-ProgName) |>
+      left_join(prog_info, by = "ProgCode") |>
+      select(StudentID, StandardAcademicPeriod, SortSem, ProgCode, ProgName, Program_of_Study_Code.dw:CIP2000,
+             everything())|>
+      arrange(StudentID, StandardAcademicPeriod, ProgCode)
+  }
+
+  return(degrees)
+}
+
+
+
+#' Compute Useful Variables from Semesters
+#'
+#' Given a vector of semesters, these functions compute useful variables.
+#'
+#' `compute_AY` returns the academic year in typical text format (e.g., "AY 2024-25"). `compute_AY_startYear()`
+#' computes the starting year for the academic year (e.g., 2020 for both "Fall 2020" and "Spring 2021").
+#' Given both a vector a semesters and a second vector representing students' entry semesters,
+#' `compute_student_year()` and `compute_student_semester()` calculate the students' year number (e.g.,
+#' a student in their first year gets a `1`) and semester number (e.g., a student in their third semesters
+#' gets a `3`), respectively.
+#'
+#' The primary reason to use `compute_AY_startYear()` is when you want to use the output in further calculations.
+#' Otherwise, `compute_AY()` is usually preferable, especially if the output could be used in labels
+#' (e.g., in a plot or table).
+#'
+#' For `compute_student_semester()`, summer semesters are counted as semester number 2.5 of the academic year.
+#' That way, every year counts as 2 semesters (e.g., A student's second Fall is their third semester), but there
+#' is still a way to represent summer semesters.
+#'
+#' @param sem A vector of semesters (e.g., StandardAcademicPeriod)
+#' @param prefix A string to add as a prefix to the output. By default, this is "AY " (the space is intentional),
+#' and the output will be formatted like "AY 2020-21". Set prefix to "" or `NULL` to return just "2020-21", set
+#' it to "AY" (no space) to return "AY2020-21", or use the `prefix` argument to set any other custom prefix
+#' @param entry_sem A vector representing entry semesters (e.g, cohort)
+#'
+#' @returns A numeric vector
+#' @name semester_computations
+NULL
+
+#' @rdname semester_computations
+#' @export
+compute_AY_startYear <- function(sem) {
+  year <- extract_year(sem)
+  term <- extract_term(sem)
+  is_not_fall <- !is.na(term) & term != "Fall"
+  year[is_not_fall] <- year[is_not_fall] - 1
+  return(year)
+}
+
+#' @rdname semester_computations
+#' @export
+compute_AY <- function(sem, prefix = "AY ") {
+  start <- compute_AY_startYear(sem)
+
+  is_na <- is.na(start)
+
+  end <- stringr::str_remove(start + 1, pattern = "^\\d\\d")
+  AY <- paste(start, end, sep = "-")
+  if(!is.null(prefix)) AY <- paste0(prefix, AY)
+
+  AY[is_na] <- NA
+  return(AY)
+}
+
+#' @rdname semester_computations
+#' @export
+compute_student_year <- function(sem, entry_sem) {
+  sem_AY <- compute_AY_startYear(sem)
+  entry_AY <- compute_AY_startYear(entry_sem)
+  student_year <- sem_AY - entry_AY + 1L
+  return(student_year)
+}
+
+#' @rdname semester_computations
+#' @export
+compute_student_sem <- function(sem, entry_sem) {
+  term_vals <- c(Fall = 1, Spring = 2, Summer = 2.5)
+
+  AY_sem <- compute_AY_startYear(sem)
+  AY_entry <- compute_AY_startYear(entry_sem)
+  AY_diff <- AY_sem - AY_entry
+
+  term_sem <- extract_term(sem)
+  term_entry <- extract_term(entry_sem)
+  term_entry[term_entry == "Summer"] <- "Fall"
+
+  term_vals_sem <- unname(term_vals[term_sem])
+  term_vals_entry <- unname(term_vals[term_entry])
+  term_adjust <- term_vals_sem - term_vals_entry
+
+  out <- as.double(1 + 2 * AY_diff + term_adjust)
+  return(out)
+}
 

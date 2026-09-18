@@ -2,9 +2,12 @@
 % Please edit documentation in R/misc.R
 \name{hook}
 \alias{hook}
+\alias{hook_each}
 \title{Use a Pattern to "hook" the Matching Value}
 \usage{
 hook(pattern, table, empty = c("error", "return_pattern", "return_na"))
+
+hook_each(patterns, table, empty = c("error", "return_pattern", "return_na"))
 }
 \arguments{
 \item{pattern}{a single regex pattern}
@@ -13,20 +16,23 @@ hook(pattern, table, empty = c("error", "return_pattern", "return_na"))
 
 \item{empty}{Controls what happens when no matches occur. By default ("error") an error is thrown.
 You can also choose to return \code{pattern} or return \code{NA}}
+
+\item{patterns}{a character vector of regex patterns}
 }
 \value{
 A single string
 }
 \description{
-Given a pattern and set of candidate values, this function returns the single matching value. This is
+Given a pattern and set of candidate values, \code{hook()} returns the single matching value. This is
 designed to be helper function that facilitates users' ability to use a (short) regex pattern as a
 stand-in for a (possibly long) full value (e.g. a filename). It provides safety by ensuring that the
 pattern "hooks" a single value (presumably the one the user intended the pattern to represent.)
 This function always throws an error when \code{pattern} matches more than one value in \code{vals}. Use the
 \code{empty} argument to control what happens when there are no matches.
+\code{hook_each()} is a vectorized function that runs \code{hook()} on each element of the input vector
 }
 \details{
-This function is really just a wrapper for \code{\link[=str_subset1]{str_subset1()}} with the arguments renamed and
+\code{hook()} is really just a wrapper for \code{\link[=str_subset1]{str_subset1()}} with the arguments renamed and
 rearranged to more intuitively match the use case (using a single pattern to retrieve a
 single candidate value)
 }

@@ -14,8 +14,9 @@ fetch_programInfo_workday()
 A tibble
 }
 \description{
-These functions retrieve program inventory files from "OO IR Office/Data Sources, Resources/SOURCE-Workday Student/Program Inventory".
-These files were pulled from the source data (SIS Archive "htv_programs" table and Workday report SRPT0027) on 8/4/2026 and and slightly updated
-(remove, rearrange columns and added columns to facilitate linking programs across SIS and Workday). One column in the SIS data (ProgramType.revised)
-was cleaned to better match Workday categories, but the original column is also retained.
+These functions retrieve full program inventories for SIS and the Data Warehouse. Because the SIS archive is
+frozen, the program inventory has been saved to file, and \code{fetch_programInfo_sis()} retrieves and reads
+this static file from "OO IR Office/Data Sources, Resources/SOURCE-SIS Archive". \code{fetch_programInfo_workday()}
+reads live data from the data warehouse ("STUDENT"."cvProgramOfStudyDefinition"), since the workday program
+info can be updated at any time.
 }

@@ -1,40 +1,3 @@
-#' Extract Year
-#'
-#' Given any input vector that consistently contains 2-digit and/or 4-digit numbers, this function extracts into
-#' a vector of "years". 2-digit numbers are automatically prepenced with "20".
-#'
-#' @param sem A vector containing semesters in some format
-#'
-#' @returns An integer vector of 4-digit years
-#' @export
-extract_year <- function(x, is_2000 = TRUE) {
-  # grab the numeric component
-  year <- stringr::str_extract(x, pattern = "\\d+")
-
-  digits <- purrr::map_int(year, .f = stringr::str_length) |>
-    unique()
-
-  if(digits %not% 2 && digits %not% 4) {
-    cli::cli_abort("{.arg x} must contain either all 2-digit years or all 4-digit years")
-  }
-
-  if(is_2000 && digits %is% 4 && !(all(stringr::str_detect(year, pattern = "^20")))) {
-    cli::cli_abort("if {.arg is_2000} is {.val {TRUE}}, all years must start with \"20\"")
-  }
-
-  if(digits %is% 2) {
-    if(!is_2000) {
-      cli::cli_abort("if {.arg is_2000} is {.val {FALSE}}, {.arg x} must contain all 4-digit years")
-    }
-
-    year <- paste0("20", year)
-  }
-
-  return(as.integer(year))
-}
-
-
-
 #' More Lenient version of `identical()`
 #'
 #' `identical()` is very strict, requiring all classes and attributes to the exactly the same. `equal()` is a
@@ -258,7 +221,7 @@ str_subset1 <- function(string, pattern, empty = c("error", "return_pattern", "r
   }
 
   if(empty %is% "return_pattern") {
-    cli::cli_inform("No matches, the pattern {.val {pattern}} is being returned")
+    cli::cli_inform("No values match the pattern {.val {pattern}}.")
     out <- pattern
   } else {
     cli::cli_inform("No matches, returning {.val {NA}}")
@@ -271,18 +234,20 @@ str_subset1 <- function(string, pattern, empty = c("error", "return_pattern", "r
 
 #' Use a Pattern to "hook" the Matching Value
 #'
-#' Given a pattern and set of candidate values, this function returns the single matching value. This is
+#' Given a pattern and set of candidate values, `hook()` returns the single matching value. This is
 #' designed to be helper function that facilitates users' ability to use a (short) regex pattern as a
 #' stand-in for a (possibly long) full value (e.g. a filename). It provides safety by ensuring that the
 #' pattern "hooks" a single value (presumably the one the user intended the pattern to represent.)
 #' This function always throws an error when `pattern` matches more than one value in `vals`. Use the
 #' `empty` argument to control what happens when there are no matches.
+#' `hook_each()` is a vectorized function that runs `hook()` on each element of the input vector
 #'
-#' This function is really just a wrapper for [str_subset1()] with the arguments renamed and
+#' `hook()` is really just a wrapper for [str_subset1()] with the arguments renamed and
 #' rearranged to more intuitively match the use case (using a single pattern to retrieve a
 #' single candidate value)
 #'
 #' @param pattern a single regex pattern
+#' @param patterns a character vector of regex patterns
 #' @param table a vector of candidate values
 #' @param empty Controls what happens when no matches occur. By default ("error") an error is thrown.
 #' You can also choose to return `pattern` or return `NA`
@@ -291,6 +256,12 @@ str_subset1 <- function(string, pattern, empty = c("error", "return_pattern", "r
 #' @export
 hook <- function(pattern, table, empty = c("error", "return_pattern", "return_na")) {
   str_subset1(table, pattern = pattern, empty = empty)
+}
+
+#' @rdname hook
+#' @export
+hook_each <- function(patterns, table, empty = c("error", "return_pattern", "return_na")) {
+  purrr::map_chr(patterns, .f = \(pattern) hook(pattern, table = table, empty = empty))
 }
 
 
@@ -306,7 +277,6 @@ is_evaluable <- function(expr) {
   res <- try(rlang::eval_tidy(expr), silent = TRUE)
   !inherits(res, "try-error")
 }
-
 
 #' Check Whether a Quosure is Storing a Waiver Object
 #'
@@ -325,6 +295,62 @@ quo_is_waiver <- function(quo) {
 
   is_waiver(rlang::eval_tidy(quo))
 }
+
+
+#' Clear Variables from the Global Environment
+#'
+#' `clear()` clears all variables from the global environment, except for functions and database
+#' connections. `clear_all()` removes everything, including functions and database connections.
+#' `clear_except()` removes everything (including functions and database connections), except for
+#' the objects specific in `...`
+#'
+#' @param ... For `clear_except()`, variables to retain in the global environment.
+#'
+#' @returns No return value - updates the global environment
+#' @export
+clear <- function() {
+  env <- rlang::global_env()
+
+  funs <- lsf.str(pos = env)
+  connections <- ls.str(pos = env) |>
+    stringr::str_subset(pattern = "conn_")
+
+  clear_except(!!!funs, !!!connections, env = env)
+}
+
+#' @rdname clear
+#' @export
+clear_all <- function() {
+  e <- rlang::global_env()
+  obj <- ls.str(pos = e)
+
+  if("conn_dw" %in% obj) {
+    DBI::dbDisconnect(e$conn_dw)
+  }
+
+  if("conn_sis" %in% obj) {
+    DBI::dbDisconnect(e$conn_sis)
+  }
+
+  clear_except()
+}
+
+#' @rdname clear
+#' @export
+clear_except <- function(...) {
+  env <- rlang::global_env()
+
+  keep_obj <- rlang::enexprs(...) |>
+    purrr::map_chr(.f = rlang::as_name)
+
+  obj <- ls.str(pos = env)
+  rm_obj <- setdiff(obj, keep_obj)
+  rm(list = rm_obj, pos = env)
+}
+
+
+
+
 
 
 

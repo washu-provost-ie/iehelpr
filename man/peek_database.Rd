@@ -3,10 +3,13 @@
 \name{peek_database}
 \alias{peek_database}
 \alias{dw_peek_census}
+\alias{dw_peek_student}
 \alias{sis_peek_htv}
 \title{See Available Tables}
 \usage{
 dw_peek_census()
+
+dw_peek_student()
 
 sis_peek_htv()
 }
@@ -15,6 +18,8 @@ A character vector of table names
 }
 \description{
 \code{dw_peek_census()} shows the names of all available packages in the "STUCENSUS" schema of the data warehouse.
+\code{dw_peek_student()} shows the names of all available packages in the "STUDENT" schema of the warehouse (this is
+the daily refresh of student data pulled from Workday).
 \code{sis_peek_htv()} shows the names of all available SIS tables with an "htv_" prefix. NOTE: the appropriate
 database connection (\code{conn_dw} or \code{conn_sis}) must be active
 }

@@ -2,7 +2,7 @@
 % Please edit documentation in R/data_access_helpers.R
 \name{sems_harmonize}
 \alias{sems_harmonize}
-\title{Convert Semester Data from SIS Format to Data Warehouse Format}
+\title{Format SIS Semester Data into Data Warehouse Format}
 \usage{
 sems_harmonize(x)
 }
