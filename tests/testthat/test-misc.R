@@ -153,3 +153,10 @@ test_that("quo_is_waiver works", {
   expect_false(quo_is_waiver(expr(a:b)))
 })
 
+test_that("is_characterish works", {
+  expect_true(is_characterish(c("foo", "bar", "baz")))
+  expect_true(is_characterish(factor(c("foo", "bar", "baz"), levels = c("foo", "bar", "baz"))))
+  expect_false(is_characterish(1:4))
+  expect_false(is_characterish(NULL))
+})
+

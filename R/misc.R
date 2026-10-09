@@ -349,6 +349,19 @@ clear_except <- function(...) {
 }
 
 
+#' Is an object characterish?
+#'
+#' Is an object either character or factor?
+#'
+#' @param x A vector
+#'
+#' @returns TRUE or FALSE
+#' @export
+is_characterish  <- function(x) {
+  is.character(x) | is.factor(x)
+}
+
+
 
 
 
