@@ -292,14 +292,14 @@ peek_templates <- function() {
 #' @export
 copy_template <- function(template_name, to) {
   template_path <- get_path_template(template_name)
-  file.copy(from = template_path, to )
+  file.copy(from = template_path, to)
 }
 
 #' @rdname template_helpers
 #' @export
 edit_template <- function(template_name) {
   template_path <- get_path_template(template_name)
-  file.open(path)
+  file.edit(template_path)
 }
 
 
