@@ -69,7 +69,7 @@ glimpse2 <- function(x, exclude_num_levels = TRUE, max_levels = 10, n_values = 4
 #' @export
 inspect <- function(x, exclude_num_levels = TRUE, max_levels = 10, n_values = 4, data_name = rlang::caller_arg(x)) {
   ## inspect will only have an effect if you are working interactively. Otherwise it will just invisibly return nothing
-  if(interative()) {
+  if(interactive()) {
    out_name <- glue::glue("{data_name}_inspect")
    out <- glimpse2(x, exclude_num_levels = exclude_num_levels, max_levels = max_levels, n_values = n_values)
    View(out, title = out_name)
@@ -77,15 +77,3 @@ inspect <- function(x, exclude_num_levels = TRUE, max_levels = 10, n_values = 4,
 
   invisible(NULL)
 }
-
-tst <- tibble::tibble(
-  a = c("foo", "bar", "baz", "blah", "foo"),
-  b = c(1, 10, 11, 4, 7),
-  c = c(TRUE, TRUE, FALSE, FALSE, TRUE),
-  d = list(c("a", "b"), "c", c("xx", "zz"), 1:3, TRUE)
-)
-
-
-
-
-

@@ -400,3 +400,48 @@ edit_helper <- function(name) {
   file.edit(path)
 }
 
+
+#' Set up Analysis Directories with a Standard File Structure
+#'
+#' These functions populate directories with a standardized "analysis structure". `add_analysis_skeleton()`
+#' adds this structure to an existing directory, and `dir_add_analyses()` creates new directories with this
+#' structure. The standardized "analysis structure" includes the following sub-directories:
+#' * 01 Raw Data
+#' * 02 Cleaning Scripts
+#' * 03 Cleaned Data
+#'    * rds Versions
+#' * 04 Analysis
+#'    * Analysis Scripts
+#' * 05 Documentation
+#'
+#' @param dir a path - the location of the directory that will be populated with the analysis structure
+#' @param parent_dir a path - the location of the directory that will contain the new analysis directory/directories
+#' @param ... names of new analysis directories to add, as a character vector or individual string arguments
+#'
+#' @returns No return value, adds directories to the file system
+#' @export
+add_analysis_skeleton <- function(dir = ".") {
+  analysis_dirs <- c("01 Raw Data", "02 Cleaning Scripts", "03 Cleaned Data", "04 Analysis", "05 Documentation")
+
+  purrr::walk(analysis_dirs, .f = \(sub_dir) {
+    new_dir <- file_path(dir, sub_dir)
+    dir.create(new_dir)
+  })
+
+  dir.create(file_path(dir, "03 Cleaned Data", "rds Versions"))
+  dir.create(file_path(dir, "04 Analysis", "Analysis Scripts"))
+}
+
+#' @rdname add_analysis_skeleton
+#' @export
+dir_add_analyses <- function(..., parent_dir = ".") {
+  dirs <- dots_chr(...)
+
+  purrr::walk(dirs, .f = \(dir) {
+    new_dir_path <- file_path(parent_dir, dir)
+    dir.create(new_dir_path)
+    add_analysis_skeleton(dir = new_dir_path)
+  })
+}
+
+
