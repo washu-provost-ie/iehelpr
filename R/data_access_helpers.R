@@ -969,3 +969,55 @@ compute_student_sem <- function(sem, entry_sem) {
   return(out)
 }
 
+
+#' Properly Sort Semesters
+#'
+#' `compute_SortSem()` and `fct_sems()` both facilitate sorting semesters in chronological order. Given the
+#' `StandardAcademicPeriod` column (or any vector of semesters), both functions compute a new version of the
+#' vector that naturally sorts in chronological order. `compute_SortSem()` recodes the input into the format
+#' used in the SIS `SortSem` field. `fct_sems()` leaves the values as-is, but converts the input to a factor
+#' in which the levels are all of the existing values in chronological order.
+#'
+#' `fct_sems()` is the preferred method because it both retains original labels and facilitates chronological
+#' sorting. However, note that if the updated data is saved back to excel, csv, or some other file (anything
+#' besides rds), the necessary factor information will be lost.
+#'
+#' `compute_SortSem()` generates hard-to-interpret values like "202203" (for "Summer 2022"), so you'll likely
+#' want to use to only to create secondary columns for sorting while retaining original columns for clarity.
+#'
+#' @param x A vector or column of semesters
+#'
+#' @returns A character vector
+#' @export
+compute_SortSem <- function(x) {
+  years <- stringr::str_extract(x, pattern = "20\\d\\d$")
+
+  terms <- extract_term(x) |>
+    dplyr::recode_values(
+      "Spring" ~ "02",
+      "Summer" ~ "03",
+      "Fall" ~ "05",
+      default = NA_character_
+    )
+
+  out <- purrr::map2_chr(years, terms, .f = \(yr, term) {
+    if(is.na(yr) || is.na(term)) {
+      return(NA_character_)
+    }
+
+    paste0(yr, term)
+  })
+
+  return(out)
+}
+
+#' @rdname compute_SortSem
+#' @export
+fct_sems <- function(x) {
+  vals <- unique(x)
+  vals_sort <- compute_SortSem(vals)
+  levels <- vals[order(vals_sort)]
+
+  out <- factor(x, levels = levels)
+  return(out)
+}

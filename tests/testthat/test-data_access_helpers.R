@@ -75,3 +75,11 @@ test_that("compute_AY_startYear, compute_student_year, and compute_student_sem w
   expect_equal(compute_student_sem(sems_na, entry_sem = entry_sems_na),  c(NA_integer_, 13, 1.5, NA_real_))
 })
 
+test_that("compute_SortSem and fct_sems work", {
+  x <- c("Summer 2021", "Summer 2022", NA, "Fall 2021", "Fall 2022", "Spring 2022", "Spring 2023", "Summer 2021", "Fall 2022")
+
+  expect_equal(compute_SortSem(x), c("202103", "202203", NA_character_, "202105", "202205", "202202", "202302", "202103", "202205"))
+  expect_equal(fct_sems(x),
+               factor(x, levels = c("Summer 2021", "Fall 2021", "Spring 2022", "Summer 2022", "Fall 2022", "Spring 2023")))
+})
+
